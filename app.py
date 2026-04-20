@@ -7,85 +7,84 @@ from scipy.stats import norm
 st.set_page_config(page_title="Auditor Multi-Canal BI", page_icon="📈", layout="wide")
 
 st.title("📊 Auditoría BI: Meta & Google Ads")
-st.sidebar.header("Configuración de Análisis")
+st.markdown("Analizador de anomalías estadísticas para optimización de presupuestos.")
 
-# 1. Selector de Plataforma
+# 1. Configuración de Plataforma
 plataforma = st.sidebar.selectbox("Selecciona la Plataforma", ["Meta Ads", "Google Ads"])
-
 archivo_subido = st.file_uploader(f"Sube el reporte CSV de {plataforma}", type=['csv'])
 
-def diagnosticar_google(subset, z):
-    # Lógica específica para Google Ads
-    ctr_col = next((c for c in subset.columns if 'ctr' in c.lower()), None)
-    if z > 2:
-        return "ALERTA: CPC Inusual (Competencia alta)"
-    if ctr_col and subset[ctr_col].iloc[0] < subset[ctr_col].mean():
-        return "ALERTA: Relevancia baja en Búsqueda"
-    return "ESTABLE: Subasta normal"
-
-def diagnosticar_meta(subset, z):
-    # Tu lógica ya probada de Meta Ads
-    frecuencia_col = next((c for c in subset.columns if 'frecuencia' in c.lower()), None)
-    frec = subset[frecuencia_col].sum() / subset.shape[0] if frecuencia_col else 0
-    if z > 2:
-        if frec > 3.5: return f"FATIGA: Frecuencia ({frec:.1f}x)"
-        return "SUBASTA ALTA: Costo elevado"
-    return "ESTABLE: Operación normal"
+def diagnosticar(z, plataforma, frecuencia=0):
+    if plataforma == "Google Ads":
+        if z > 1.5: return "COSTO ALTO: Revisar competencia"
+        if z < -1: return "EFICIENTE: Buen rendimiento"
+    else:
+        if z > 2 and frecuencia > 3.5: return "FATIGA: Cambiar creativos"
+        if z > 1.5: return "COSTO ELEVADO"
+    return "ESTABLE"
 
 if archivo_subido:
     try:
-        # --- NUEVA CARGA A PRUEBA DE BALAS ---
+        # --- CARGA Y LIMPIEZA AUTOMÁTICA ---
         if plataforma == "Google Ads":
-            # Le decimos que se salte las 2 primeras filas de título
             df = pd.read_csv(archivo_subido, encoding='utf-8-sig', skiprows=2)
-            # Borramos las filas de "Totales"
+            df.columns = df.columns.str.strip()
+            # Limpiar filas de totales y nulas
             df = df.dropna(subset=[df.columns[1]])
             df = df[~df.iloc[:, 0].astype(str).str.contains("Total", case=False)]
             
-            # Convertimos las comas europeas a puntos decimales
+            # Convertir monedas (comas a puntos)
             for col in df.columns:
-                if 'coste' in col.lower() or 'cpc' in col.lower() or 'costo' in col.lower():
-                    df[col] = df[col].astype(str).str.replace('.', '').str.replace(',', '.').astype(float)
+                if any(x in col.lower() for x in ['coste', 'cpc', 'costo']):
+                    df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).astype(float)
+            
+            metrica_costo = next((c for c in df.columns if 'cpc' in c.lower() or 'coste' in c.lower()), df.columns[0])
+            col_id = next((c for c in df.columns if 'campaña' in c.lower()), df.columns[1])
         else:
             df = pd.read_csv(archivo_subido, encoding='utf-8-sig')
-            
-        df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
-
-        # Definir métrica y columnas según plataforma
-        if plataforma == "Google Ads":
-            metrica_costo = next((c for c in df.columns if 'cpc' in c.lower() or 'coste' in c.lower()), df.columns[0])
-            col_id = next((c for c in df.columns if 'campaña' in c.lower() or 'campaign' in c.lower()), df.columns[0])
-        else:
+            df.columns = df.columns.str.strip()
             metrica_costo = 'Costo por resultados'
             col_id = next((c for c in df.columns if 'nombre' in c.lower()), df.columns[0])
 
-        # Procesamiento
-        # Para Google Ads, usamos la columna 'Coste' para determinar las top campañas
-        col_gasto = 'Coste' if plataforma == "Google Ads" else 'Importe gastado (MXN)'
-        top_items = df.groupby(col_id)[col_gasto].sum().nlargest(4).index
+        # --- CÁLCULO DE BENCHMARK (Cuenta vs Campaña) ---
+        # Calculamos la media y desviación de TODA la tabla para comparar
+        m_global = df[metrica_costo].mean()
+        s_global = df[metrica_costo].std() if df[metrica_costo].std() > 0 else 1
         
-        st.subheader(f"Resultados de {plataforma}")
-        cols = st.columns(len(top_items))
-
+        st.subheader(f"Análisis de Desviación: {plataforma}")
+        
+        # Grid de resultados
+        top_items = df.sort_values(by=metrica_costo, ascending=False).head(4)
+        
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        plt.subplots_adjust(hspace=0.5)
+        plt.subplots_adjust(hspace=0.6)
 
-        for i, (item, ax) in enumerate(zip(top_items, axes.flatten())):
-            subset = df[df[col_id] == item].dropna(subset=[metrica_costo])
-            if len(subset) > 2:
-                m, s, h = subset[metrica_costo].mean(), subset[metrica_costo].std(), subset[metrica_costo].iloc[0]
-                z = (h - m) / s if s > 0 else 0
-                
-                msg = diagnosticar_google(subset, z) if plataforma == "Google Ads" else diagnosticar_meta(subset, z)
-                color = '#E74C3C' if z > 2 else '#3498DB'
-                
-                x = np.linspace(m - 4*s, m + 4*s, 100)
-                ax.plot(x, norm.pdf(x, m, s), color=color, lw=2)
-                ax.fill_between(x, norm.pdf(x, m, s), alpha=0.1, color=color)
-                ax.axvline(h, color='black', lw=2)
-                ax.set_title(f"{item[:20]}...\nZ: {z:.2f} | {msg}", fontsize=9, color=color)
-        
+        for i, (index, row) in enumerate(top_items.iterrows()):
+            ax = axes.flatten()[i]
+            nombre = row[col_id]
+            valor_actual = row[metrica_costo]
+            
+            # Z-Score comparando esta campaña contra el promedio del archivo
+            z = (valor_actual - m_global) / s_global
+            
+            # Gráfica de distribución
+            x = np.linspace(m_global - 4*s_global, m_global + 4*s_global, 100)
+            y = norm.pdf(x, m_global, s_global)
+            
+            color = '#E74C3C' if z > 1 else '#3498DB'
+            ax.plot(x, y, color=color, lw=2)
+            ax.fill_between(x, y, alpha=0.1, color=color)
+            ax.axvline(valor_actual, color='black', linestyle='--', lw=2, label='Tu Campaña')
+            ax.axvline(m_global, color='gray', linestyle=':', label='Promedio Cuenta')
+            
+            status = diagnosticar(z, plataforma)
+            ax.set_title(f"{nombre[:20]}\nZ: {z:.2f} | {status}", fontsize=10, fontweight='bold')
+            ax.grid(axis='y', alpha=0.3)
+
         st.pyplot(fig)
+        
+        # Tabla de depuración para tu control
+        with st.expander("Ver datos procesados"):
+            st.dataframe(df[[col_id, metrica_costo]])
 
     except Exception as e:
-        st.error(f"Error procesando el archivo: {e}")
+        st.error(f"Error técnico: {e}. Asegúrate de subir el archivo 'Informe de campaña' original.")
