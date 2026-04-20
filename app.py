@@ -44,21 +44,24 @@ if archivo_subido:
             df.columns = df.columns.str.strip()
             
             # --- MEJORA PARA META ADS ---
-            # Busca "Coste" o "Costo" dinámicamente sin importar el idioma
             metrica_costo = next((c for c in df.columns if 'cost' in c.lower() and 'resultado' in c.lower()), df.columns[0])
             col_id = next((c for c in df.columns if 'nombre' in c.lower()), df.columns[0])
             
-            # Limpiamos errores de texto (comas por puntos) y descartamos las campañas sin gasto
+            # Limpiamos errores de texto y descartamos las campañas sin gasto
             df[metrica_costo] = pd.to_numeric(df[metrica_costo].astype(str).str.replace(',', '.'), errors='coerce')
             df = df.dropna(subset=[metrica_costo])
 
         # --- CÁLCULO DE BENCHMARK (Cuenta vs Campaña) ---
-        m_global = df[metrica_costo].mean()
-        s_global = df[metrica_costo].std() if df[metrica_costo].std() > 0 else 1
+        # NUEVO: Agrupamos por campaña para promediar los días y evitar nombres duplicados
+        df_agrupado = df.groupby(col_id)[metrica_costo].mean().reset_index()
+        
+        m_global = df_agrupado[metrica_costo].mean()
+        s_global = df_agrupado[metrica_costo].std() if df_agrupado[metrica_costo].std() > 0 else 1
         
         st.subheader(f"Análisis de Desviación: {plataforma}")
         
-        top_items = df.sort_values(by=metrica_costo, ascending=False).head(4)
+        # Grid de resultados (Top 4 campañas agrupadas)
+        top_items = df_agrupado.sort_values(by=metrica_costo, ascending=False).head(4)
         
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
         plt.subplots_adjust(hspace=0.6)
@@ -88,7 +91,8 @@ if archivo_subido:
         st.pyplot(fig)
         
         with st.expander("Ver datos procesados"):
-            st.dataframe(df[[col_id, metrica_costo]])
+            # Ahora la tabla también mostrará los datos agrupados correctamente
+            st.dataframe(df_agrupado[[col_id, metrica_costo]])
 
     except Exception as e:
         st.error(f"Error técnico: {e}. Asegúrate de subir el archivo original.")
