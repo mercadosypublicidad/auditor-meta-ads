@@ -34,7 +34,21 @@ def diagnosticar_meta(subset, z):
 
 if archivo_subido:
     try:
-        df = pd.read_csv(archivo_subido, encoding='utf-8-sig')
+        # --- NUEVA CARGA A PRUEBA DE BALAS ---
+        if plataforma == "Google Ads":
+            # Le decimos que se salte las 2 primeras filas de título
+            df = pd.read_csv(archivo_subido, encoding='utf-8-sig', skiprows=2)
+            # Borramos las filas de "Totales"
+            df = df.dropna(subset=[df.columns[1]])
+            df = df[~df.iloc[:, 0].astype(str).str.contains("Total", case=False)]
+            
+            # Convertimos las comas europeas a puntos decimales
+            for col in df.columns:
+                if 'coste' in col.lower() or 'cpc' in col.lower() or 'costo' in col.lower():
+                    df[col] = df[col].astype(str).str.replace('.', '').str.replace(',', '.').astype(float)
+        else:
+            df = pd.read_csv(archivo_subido, encoding='utf-8-sig')
+            
         df.columns = df.columns.str.strip().str.replace('"', '').str.replace("'", "")
 
         # Definir métrica y columnas según plataforma
@@ -46,7 +60,9 @@ if archivo_subido:
             col_id = next((c for c in df.columns if 'nombre' in c.lower()), df.columns[0])
 
         # Procesamiento
-        top_items = df.groupby(col_id)['Importe gastado (MXN)' if plataforma == "Meta Ads" else df.columns[-1]].sum().nlargest(4).index
+        # Para Google Ads, usamos la columna 'Coste' para determinar las top campañas
+        col_gasto = 'Coste' if plataforma == "Google Ads" else 'Importe gastado (MXN)'
+        top_items = df.groupby(col_id)[col_gasto].sum().nlargest(4).index
         
         st.subheader(f"Resultados de {plataforma}")
         cols = st.columns(len(top_items))
@@ -72,4 +88,4 @@ if archivo_subido:
         st.pyplot(fig)
 
     except Exception as e:
-        st.error(f"Error: Asegúrate de que las columnas coincidan con {plataforma}.")
+        st.error(f"Error procesando el archivo: {e}")
