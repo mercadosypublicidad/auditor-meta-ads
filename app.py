@@ -46,7 +46,6 @@ if archivo_subido:
             col_id = next((c for c in df.columns if 'nombre' in c.lower()), df.columns[0])
 
         # --- CÁLCULO DE BENCHMARK (Cuenta vs Campaña) ---
-        # Calculamos la media y desviación de TODA la tabla para comparar
         m_global = df[metrica_costo].mean()
         s_global = df[metrica_costo].std() if df[metrica_costo].std() > 0 else 1
         
@@ -63,18 +62,19 @@ if archivo_subido:
             nombre = row[col_id]
             valor_actual = row[metrica_costo]
             
-            # Z-Score comparando esta campaña contra el promedio del archivo
             z = (valor_actual - m_global) / s_global
             
-            # Gráfica de distribución
             x = np.linspace(m_global - 4*s_global, m_global + 4*s_global, 100)
             y = norm.pdf(x, m_global, s_global)
             
             color = '#E74C3C' if z > 1 else '#3498DB'
             ax.plot(x, y, color=color, lw=2)
             ax.fill_between(x, y, alpha=0.1, color=color)
-            ax.axvline(valor_actual, color='black', linestyle='--', lw=2, label='Tu Campaña')
-            ax.axvline(m_global, color='gray', linestyle=':', label='Promedio Cuenta')
+            
+            # --- AQUÍ ESTÁ LA MEJORA: ETIQUETAS CON PRECIOS ---
+            ax.axvline(valor_actual, color='black', linestyle='--', lw=2, label=f'Tu Campaña: ${valor_actual:.2f}')
+            ax.axvline(m_global, color='gray', linestyle=':', label=f'Promedio Cuenta: ${m_global:.2f}')
+            ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
             
             status = diagnosticar(z, plataforma)
             ax.set_title(f"{nombre[:20]}\nZ: {z:.2f} | {status}", fontsize=10, fontweight='bold')
@@ -82,7 +82,6 @@ if archivo_subido:
 
         st.pyplot(fig)
         
-        # Tabla de depuración para tu control
         with st.expander("Ver datos procesados"):
             st.dataframe(df[[col_id, metrica_costo]])
 
