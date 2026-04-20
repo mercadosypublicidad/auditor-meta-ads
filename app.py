@@ -42,8 +42,15 @@ if archivo_subido:
         else:
             df = pd.read_csv(archivo_subido, encoding='utf-8-sig')
             df.columns = df.columns.str.strip()
-            metrica_costo = 'Costo por resultados'
+            
+            # --- MEJORA PARA META ADS ---
+            # Busca "Coste" o "Costo" dinámicamente sin importar el idioma
+            metrica_costo = next((c for c in df.columns if 'cost' in c.lower() and 'resultado' in c.lower()), df.columns[0])
             col_id = next((c for c in df.columns if 'nombre' in c.lower()), df.columns[0])
+            
+            # Limpiamos errores de texto (comas por puntos) y descartamos las campañas sin gasto
+            df[metrica_costo] = pd.to_numeric(df[metrica_costo].astype(str).str.replace(',', '.'), errors='coerce')
+            df = df.dropna(subset=[metrica_costo])
 
         # --- CÁLCULO DE BENCHMARK (Cuenta vs Campaña) ---
         m_global = df[metrica_costo].mean()
@@ -51,7 +58,6 @@ if archivo_subido:
         
         st.subheader(f"Análisis de Desviación: {plataforma}")
         
-        # Grid de resultados
         top_items = df.sort_values(by=metrica_costo, ascending=False).head(4)
         
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
@@ -71,7 +77,6 @@ if archivo_subido:
             ax.plot(x, y, color=color, lw=2)
             ax.fill_between(x, y, alpha=0.1, color=color)
             
-            # --- AQUÍ ESTÁ LA MEJORA: ETIQUETAS CON PRECIOS ---
             ax.axvline(valor_actual, color='black', linestyle='--', lw=2, label=f'Tu Campaña: ${valor_actual:.2f}')
             ax.axvline(m_global, color='gray', linestyle=':', label=f'Promedio Cuenta: ${m_global:.2f}')
             ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
@@ -86,4 +91,4 @@ if archivo_subido:
             st.dataframe(df[[col_id, metrica_costo]])
 
     except Exception as e:
-        st.error(f"Error técnico: {e}. Asegúrate de subir el archivo 'Informe de campaña' original.")
+        st.error(f"Error técnico: {e}. Asegúrate de subir el archivo original.")
