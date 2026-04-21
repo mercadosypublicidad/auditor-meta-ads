@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+import textwrap # NUEVO: Librería para envolver textos largos
 
 st.set_page_config(page_title="Auditor Multi-Canal BI", page_icon="📈", layout="wide")
 
@@ -13,7 +14,6 @@ st.markdown("Analizador de anomalías estadísticas para optimización de presup
 st.sidebar.header("⚙️ Controles de Auditoría")
 plataforma = st.sidebar.selectbox("Selecciona la Plataforma", ["Meta Ads", "Google Ads"])
 
-# NUEVO: Selector de Nivel y Filtro de Activas
 nivel_analisis = st.sidebar.radio("Nivel de Análisis", ["Campaña", "Anuncio"])
 solo_activas = st.sidebar.checkbox("🟢 Mostrar solo activas", value=True, help="Oculta campañas pausadas o finalizadas.")
 
@@ -43,8 +43,6 @@ if archivo_subido:
                     df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).astype(float)
             
             metrica_costo = next((c for c in df.columns if 'cpc' in c.lower() or 'coste' in c.lower()), df.columns[0])
-            
-            # Detectar columna de estado
             col_estado = next((c for c in df.columns if 'estado' in c.lower()), None)
 
         else:
@@ -55,24 +53,20 @@ if archivo_subido:
             df[metrica_costo] = pd.to_numeric(df[metrica_costo].astype(str).str.replace(',', '.'), errors='coerce')
             df = df.dropna(subset=[metrica_costo])
             
-            # Detectar columna de estado en Meta
             col_estado = next((c for c in df.columns if 'entrega' in c.lower() or 'estado' in c.lower()), None)
 
         # --- APLICAR FILTRO DE ACTIVAS ---
         if solo_activas and col_estado:
-            # Filtramos dejando solo lo que contenga active, activa, apto o habilitada
             df = df[df[col_estado].astype(str).str.contains('active|activa|apto|habilitada|curso', case=False, na=False)]
             if len(df) == 0:
                 st.warning("⚠️ No hay datos activos en este reporte. Intenta apagar el filtro de 'Mostrar solo activas'.")
                 st.stop()
 
-        # --- DETECCIÓN DINÁMICA DE NIVEL (Campaña vs Anuncio) ---
+        # --- DETECCIÓN DINÁMICA DE NIVEL ---
         if nivel_analisis == "Campaña":
             col_id = next((c for c in df.columns if 'campaña' in c.lower()), df.columns[1] if plataforma=="Google Ads" else df.columns[0])
         else:
-            # Busca la palabra "anuncio", pero que no sea la columna de presupuesto o conjunto
             col_id = next((c for c in df.columns if 'anuncio' in c.lower() and 'conjunto' not in c.lower() and 'presupuesto' not in c.lower()), None)
-            
             if not col_id:
                 st.warning("⚠️ No se encontró la columna de Anuncios. ¿Aseguraste descargar el CSV desde la pestaña de 'Anuncios'? Cambiando a vista de Campaña automáticamente.")
                 col_id = next((c for c in df.columns if 'campaña' in c.lower()), df.columns[1])
@@ -88,8 +82,8 @@ if archivo_subido:
         
         top_items = df_agrupado.sort_values(by=metrica_costo, ascending=False).head(4)
         
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        plt.subplots_adjust(hspace=0.6)
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10)) # Aumenté un poco el alto de la figura
+        plt.subplots_adjust(hspace=0.7) # Aumenté el espacio entre gráficas para que quepa el texto largo
 
         for i, (index, row) in enumerate(top_items.iterrows()):
             ax = axes.flatten()[i]
@@ -107,12 +101,13 @@ if archivo_subido:
             
             ax.axvline(valor_actual, color='black', linestyle='--', lw=2, label=f'Costo Actual: ${valor_actual:.2f}')
             ax.axvline(m_global, color='gray', linestyle=':', label=f'Promedio Cuenta: ${m_global:.2f}')
-            ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
+            ax.legend(loc='upper right', fontsize=8, framealpha=0.9)
             
             status = diagnosticar(z, plataforma)
-            # Acortamos nombres largos de anuncios para que no rompan la gráfica
-            nombre_corto = (nombre[:25] + '...') if len(str(nombre)) > 25 else nombre
-            ax.set_title(f"{nombre_corto}\nZ: {z:.2f} | {status}", fontsize=10, fontweight='bold')
+            
+            # --- LA MEJORA VISUAL: ENVOLVER TEXTO EN VEZ DE CORTARLO ---
+            nombre_envuelto = "\n".join(textwrap.wrap(str(nombre), width=45))
+            ax.set_title(f"{nombre_envuelto}\nZ: {z:.2f} | {status}", fontsize=9, fontweight='bold')
             ax.grid(axis='y', alpha=0.3)
 
         st.pyplot(fig)
